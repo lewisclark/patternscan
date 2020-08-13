@@ -3,6 +3,12 @@ name = "patternscan"
 version = "0.1.0"
 authors = ["lewis <me@lewis.to>"]
 edition = "2018"
+description = "Searches for a contiguous array of bytes determined by a wild-carded pattern"
+readme = "README.md"
+repository = "https://github.com/c4fe/patternscan"
+license = "MIT"
+keywords = ["reverse-engineering", "hacking", "game-hacking", "sigscan"]
+categories = ["development-tools"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
