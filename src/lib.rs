@@ -147,6 +147,22 @@ mod tests {
     }
 
     #[test]
+    fn scan_exists_multiple_q() {
+        let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
+        let pattern = "fe ? ? ? 90";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![1]);
+    }
+
+    #[test]
+    fn scan_exists_multiple_q_starts() {
+        let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
+        let pattern = "? ? ? ? fd";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![0]);
+    }
+
+    #[test]
     fn scan_nexists_1() {
         let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
         let pattern = "78 90 cc dd fe";
