@@ -1,5 +1,5 @@
 [package]
-name = "patternscanner-rs"
+name = "patternscan"
 version = "0.1.0"
 authors = ["lewis <me@lewis.to>"]
 edition = "2018"
