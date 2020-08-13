@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 use std::str::FromStr;
 
-pub fn scan(bytes: &[u8], pattern: &str) -> Result<Option<Vec<usize>>, Error> {
+pub fn scan(bytes: &[u8], pattern: &str) -> Result<Vec<usize>, Error> {
     let pattern = Pattern::from_str(pattern)?;
     let mut matches = Vec::new();
 
@@ -11,11 +11,7 @@ pub fn scan(bytes: &[u8], pattern: &str) -> Result<Option<Vec<usize>>, Error> {
         }
     }
 
-    if matches.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(matches))
-    }
+    Ok(matches)
 }
 
 fn pattern_matches(bytes: &[u8], pattern: &Pattern) -> bool {
@@ -121,7 +117,7 @@ mod tests {
         let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
         let pattern = "10 20 30";
 
-        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), Some(vec![0]));
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![0]);
     }
 
     #[test]
@@ -129,7 +125,7 @@ mod tests {
         let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
         let pattern = "20 30 40";
 
-        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), Some(vec![1]));
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![1]);
     }
 
     #[test]
@@ -137,7 +133,7 @@ mod tests {
         let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
         let pattern = "40 50 60";
 
-        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), None);
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![]);
     }
 
     #[test]
@@ -145,7 +141,7 @@ mod tests {
         let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
         let pattern = "fe 7c 88 fd 90 0";
 
-        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), Some(vec![1]));
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![1]);
     }
 
     #[test]
@@ -153,7 +149,7 @@ mod tests {
         let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
         let pattern = "78 90 cc dd fe";
 
-        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), None);
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![]);
     }
 
     #[test]
@@ -161,7 +157,7 @@ mod tests {
         let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
         let pattern = "fe 7c 88 fd 90 1";
 
-        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), None);
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![]);
     }
 
     #[test]
@@ -169,6 +165,6 @@ mod tests {
         let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
         let pattern = "fe 7c 88 fd 90 0 1";
 
-        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), None);
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), vec![]);
     }
 }
