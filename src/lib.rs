@@ -43,6 +43,7 @@ impl Display for Error {
 impl std::error::Error for Error {}
 
 // PatternByte
+#[derive(PartialEq, Eq)]
 enum PatternByte {
     Byte(u8),
     Any,
@@ -75,6 +76,7 @@ impl PartialEq<u8> for PatternByte {
 }
 
 // Pattern
+#[derive(PartialEq, Eq)]
 struct Pattern {
     bytes: Vec<PatternByte>,
 }
