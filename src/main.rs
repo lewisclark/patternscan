@@ -4,25 +4,29 @@ use std::fmt::{self, Display};
 fn main() {
     let bytes = [0x10, 0x20, 0x30, 0x40, 0x10, 0x20, 0x50, 0x50, 0x90, 0x90, 0x80];
     let pattern = "90 ? 80";
-    let matches = find_pattern(&bytes, &pattern);
+    let matches = scan(&bytes, &pattern);
 
     println!("matches -> {:?}", matches);
 }
 
-// Example pattern: 74 CC 12 00 ? ? 23 42
-pub fn find_pattern(bytes: &[u8], pattern: &str) -> Result<Option<usize>, Error> {
+pub fn scan(bytes: &[u8], pattern: &str) -> Result<Option<Vec<usize>>, Error> {
     let pattern = Pattern::from_str(pattern)?;
+    let mut matches = Vec::new();
 
     for i in 0..bytes.len() {
-        if matches(&bytes[i..], &pattern) {
-            return Ok(Some(i))
+        if pattern_matches(&bytes[i..], &pattern) {
+            matches.push(i);
         }
     }
 
-    Ok(None)
+    if matches.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(matches))
+    }
 }
 
-fn matches(bytes: &[u8], pattern: &Pattern) -> bool {
+fn pattern_matches(bytes: &[u8], pattern: &Pattern) -> bool {
     if bytes.len() < pattern.len() {
         false
     } else {
