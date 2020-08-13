@@ -1,13 +1,5 @@
-use std::str::FromStr;
 use std::fmt::{self, Display};
-
-fn main() {
-    let bytes = [0x10, 0x20, 0x30, 0x40, 0x10, 0x20, 0x50, 0x50, 0x90, 0x90, 0x80];
-    let pattern = "90 ? 80";
-    let matches = scan(&bytes, &pattern);
-
-    println!("matches -> {:?}", matches);
-}
+use std::str::FromStr;
 
 pub fn scan(bytes: &[u8], pattern: &str) -> Result<Option<Vec<usize>>, Error> {
     let pattern = Pattern::from_str(pattern)?;
