@@ -112,3 +112,63 @@ impl PartialEq<[u8]> for Pattern {
         Iterator::zip(self.bytes.iter(), other.iter()).all(|(pb, b)| pb == b)
     }
 }
+
+// Tests
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn simple_scan_start() {
+        let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
+        let pattern = "10 20 30";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), Some(vec![0]));
+    }
+
+    #[test]
+    fn simple_scan_middle() {
+        let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
+        let pattern = "20 30 40";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), Some(vec![1]));
+    }
+
+    #[test]
+    fn scan_bad_exceeds() {
+        let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
+        let pattern = "40 50 60";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), None);
+    }
+
+    #[test]
+    fn scan_exists() {
+        let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
+        let pattern = "fe 7c 88 fd 90 0";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), Some(vec![1]));
+    }
+
+    #[test]
+    fn scan_nexists_1() {
+        let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
+        let pattern = "78 90 cc dd fe";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), None);
+    }
+
+    #[test]
+    fn scan_nexists_2() {
+        let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
+        let pattern = "fe 7c 88 fd 90 1";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), None);
+    }
+
+    #[test]
+    fn scan_pattern_larger_than_bytes() {
+        let bytes = [0xff, 0xfe, 0x7c, 0x88, 0xfd, 0x90, 0x00];
+        let pattern = "fe 7c 88 fd 90 0 1";
+
+        assert_eq!(crate::scan(&bytes, &pattern).unwrap(), None);
+    }
+}
