@@ -1,7 +1,11 @@
 # patternscan
-Searches for a contiguous array of bytes determined by a given pattern. The pattern can include supported wildcard characters, as shown [below](#wildcards).
 
-Available on [crates.io](https://crates.io/crates/patternscan).
+[![CI Badge](https://github.com/lewisclark/patternscan/workflows/CI/badge.svg)](https://github.com/lewisclark/patternscan/actions?query=workflow%3ACI)
+[![Crates Badge](https://img.shields.io/crates/v/patternscan)](https://crates.io/crates/patternscan)
+[![License Badge](https://img.shields.io/github/license/lewisclark/patternscan)](LICENSE.md)
+[![Issues Badge](https://img.shields.io/github/issues/lewisclark/patternscan)](https://github.com/lewisclark/patternscan/issues)
+
+Searches for a contiguous array of bytes determined by a given pattern. The pattern can include supported wildcard characters, as shown [below](#wildcards).
 
 ## Wildcards
 - `?` match any byte
