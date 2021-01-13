@@ -236,4 +236,40 @@ mod tests {
 
         assert_eq!(crate::scan(Cursor::new(bytes), &pattern).unwrap(), vec![]);
     }
+
+    #[test]
+    fn scan_first_match_simple_start() {
+        let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
+        let pattern = "10 20 30";
+
+        assert_eq!(
+            crate::scan_first_match(Cursor::new(bytes), &pattern)
+                .unwrap()
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn scan_first_match_simple_middle() {
+        let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
+        let pattern = "20 30 40";
+
+        assert_eq!(
+            crate::scan_first_match(Cursor::new(bytes), &pattern)
+                .unwrap()
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn scan_first_match_no_match() {
+        let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
+        let pattern = "10 11 12";
+
+        assert!(crate::scan_first_match(Cursor::new(bytes), &pattern)
+            .unwrap()
+            .is_none());
+    }
 }
