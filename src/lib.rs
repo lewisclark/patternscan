@@ -267,4 +267,12 @@ mod tests {
             vec![0, 3]
         );
     }
+
+    #[test]
+    fn scan_rejects_invalid_pattern() {
+        let bytes = [0x10, 0x20, 0x30];
+        let pattern = "10 fff 20";
+
+        assert!(crate::scan(Cursor::new(bytes), &pattern).is_err());
+    }
 }
