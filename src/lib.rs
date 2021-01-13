@@ -25,7 +25,7 @@
 //! Any struct implementing [`Read`] can be passed as the reader which should be scanned for
 //! ocurrences of a pattern, so one could scan for a byte sequence within an executable as follows:
 //!
-//! ```rust
+//! ```ignore
 //! use patternscan::scan;
 //! use std::fs::File;
 //!
