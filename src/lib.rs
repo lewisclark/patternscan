@@ -28,6 +28,41 @@ pub fn scan(mut reader: impl Read, pattern: &str) -> Result<Vec<usize>, Error> {
     Ok(matches)
 }
 
+/// Scan for the first instance of `pattern` in the bytes read by `reader`.
+///
+/// This function should be used instead of [`scan`] if you just want to test whether a byte string
+/// contains a given pattern, or just find the first instance, as it returns as soon as the first
+/// match is found, and will therefore be more efficient for these purposes in long strings where
+/// the pattern occurs early.
+///
+/// Returns a [`Result`] containing an [`Option`]. This Option will contain `Some(index)` if the
+/// pattern was found, where `index` is the index of the first match, and `None` if the pattern
+/// was not found. Returns an [`Error`] if an error was encountered while scanning, which could
+/// occur if the pattern is invalid (i.e: contains something other than 8-bit hex values and
+/// wildcards), or if the reader encounters an error.
+pub fn scan_first_match(mut reader: impl Read, pattern: &str) -> Result<Option<usize>, Error> {
+    let pattern = Pattern::from_str(pattern)?;
+
+    let mut bytes = [0; CHUNK_SIZE];
+    loop {
+        let bytes_written = reader
+            .read(&mut bytes)
+            .map_err(|e| Error::new(format!("Failed to read from reader: {}", e)))?;
+
+        if bytes_written == 0 {
+            break;
+        }
+
+        for i in 0..bytes_written {
+            if pattern_matches(&bytes[i..], &pattern) {
+                return Ok(Some(i));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 fn pattern_matches(bytes: &[u8], pattern: &Pattern) -> bool {
     if bytes.len() < pattern.len() {
         false
