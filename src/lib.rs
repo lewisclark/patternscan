@@ -245,4 +245,26 @@ mod tests {
 
         assert_eq!(crate::scan(Cursor::new(bytes), &pattern).unwrap(), vec![]);
     }
+
+    #[test]
+    fn scan_multiple_instances_of_pattern() {
+        let bytes = [0x10, 0x20, 0x30, 0x10, 0x20, 0x30];
+        let pattern = "10 20 30";
+
+        assert_eq!(
+            crate::scan(Cursor::new(bytes), &pattern).unwrap(),
+            vec![0, 3]
+        );
+    }
+
+    #[test]
+    fn scan_multiple_instances_q() {
+        let bytes = [0x10, 0x20, 0x30, 0x10, 0x40, 0x30];
+        let pattern = "10 ? 30";
+
+        assert_eq!(
+            crate::scan(Cursor::new(bytes), &pattern).unwrap(),
+            vec![0, 3]
+        );
+    }
 }
