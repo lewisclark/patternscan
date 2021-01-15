@@ -346,4 +346,18 @@ mod tests {
             .unwrap()
             .is_none());
     }
+
+    #[test]
+    fn find_across_chunk_boundary() {
+        let mut bytes = vec![0; super::CHUNK_SIZE - 2];
+        bytes.push(0xaa);
+        bytes.push(0xbb);
+        bytes.push(0xcc);
+        bytes.push(0xdd);
+        let pattern = "aa bb cc dd";
+
+        assert!(crate::scan_first_match(Cursor::new(bytes), &pattern)
+            .unwrap()
+            .is_some())
+    }
 }
