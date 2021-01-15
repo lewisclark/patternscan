@@ -40,7 +40,7 @@ use std::fmt::{self, Display};
 use std::io::Read;
 use std::str::FromStr;
 
-const CHUNK_SIZE: usize = 0x800;
+pub const CHUNK_SIZE: usize = 0x800;
 
 /// Scan for any instances of `pattern` in the bytes read by `reader`.
 ///
@@ -48,28 +48,9 @@ const CHUNK_SIZE: usize = 0x800;
 /// bytes. If no matches are found, this vector will be empty. Returns an [`Error`] if an error was
 /// encountered while scanning, which could occur if the pattern is invalid (i.e: contains
 /// something other than 8-bit hex values and wildcards), or if the reader encounters an error.
-pub fn scan(mut reader: impl Read, pattern: &str) -> Result<Vec<usize>, Error> {
-    let pattern = Pattern::from_str(pattern)?;
-    let mut matches = Vec::new();
-
-    let mut bytes = [0; CHUNK_SIZE];
-    loop {
-        let bytes_written = reader
-            .read(&mut bytes)
-            .map_err(|e| Error::new(format!("Failed to read from reader: {}", e)))?;
-
-        if bytes_written == 0 {
-            break;
-        }
-
-        for i in 0..bytes_written {
-            if pattern_matches(&bytes[i..], &pattern) {
-                matches.push(i);
-            }
-        }
-    }
-
-    Ok(matches)
+pub fn scan(reader: impl Read, pattern: &str) -> Result<Vec<usize>, Error> {
+    let matches = Matches::from_pattern_str(reader, pattern)?;
+    matches.collect()
 }
 
 /// Scan for the first instance of `pattern` in the bytes read by `reader`.
@@ -84,30 +65,14 @@ pub fn scan(mut reader: impl Read, pattern: &str) -> Result<Vec<usize>, Error> {
 /// was not found. Returns an [`Error`] if an error was encountered while scanning, which could
 /// occur if the pattern is invalid (i.e: contains something other than 8-bit hex values and
 /// wildcards), or if the reader encounters an error.
-pub fn scan_first_match(mut reader: impl Read, pattern: &str) -> Result<Option<usize>, Error> {
+pub fn scan_first_match(reader: impl Read, pattern: &str) -> Result<Option<usize>, Error> {
     let pattern = Pattern::from_str(pattern)?;
-
-    let mut bytes = [0; CHUNK_SIZE];
-    loop {
-        let bytes_written = reader
-            .read(&mut bytes)
-            .map_err(|e| Error::new(format!("Failed to read from reader: {}", e)))?;
-
-        if bytes_written == 0 {
-            break;
-        }
-
-        for i in 0..bytes_written {
-            if pattern_matches(&bytes[i..], &pattern) {
-                return Ok(Some(i));
-            }
-        }
-    }
-
-    Ok(None)
+    let mut matches = Matches::from_pattern(reader, pattern)?;
+    matches.next().transpose()
 }
 
-fn pattern_matches(bytes: &[u8], pattern: &Pattern) -> bool {
+/// Determine whether a byte slice matches a pattern.
+pub fn pattern_matches(bytes: &[u8], pattern: &Pattern) -> bool {
     if bytes.len() < pattern.len() {
         false
     } else {
@@ -136,8 +101,9 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Represents a single byte in a search pattern.
 #[derive(PartialEq, Eq)]
-enum PatternByte {
+pub enum PatternByte {
     Byte(u8),
     Any,
 }
@@ -145,6 +111,11 @@ enum PatternByte {
 impl FromStr for PatternByte {
     type Err = Error;
 
+    /// Create an instance of [`PatternByte`] from a string.
+    ///
+    /// This string should either be a hexadecimal byte, or a "?". Will return an error if the
+    /// string is not a "?", or it cannot be converted into an 8-bit integer when interpreted as
+    /// hexadecimal.
     fn from_str(s: &str) -> Result<Self, Error> {
         if s == "?" {
             Ok(Self::Any)
@@ -168,9 +139,9 @@ impl PartialEq<u8> for PatternByte {
     }
 }
 
-// Pattern
+/// Represents a pattern to search for in a byte string.
 #[derive(PartialEq, Eq)]
-struct Pattern {
+pub struct Pattern {
     bytes: Vec<PatternByte>,
 }
 
@@ -201,6 +172,102 @@ impl FromStr for Pattern {
 impl PartialEq<[u8]> for Pattern {
     fn eq(&self, other: &[u8]) -> bool {
         Iterator::zip(self.bytes.iter(), other.iter()).all(|(pb, b)| pb == b)
+    }
+}
+
+/// Iterator over locations of matches for a pattern found within a byte string.
+///
+/// This struct implements the actual logic for pattern matching, and is used by the [`scan`] and
+/// [`scan_first_match`] functions to locate matches. The values returned by the iterator are
+/// indices of locations of the pattern matches within the byte string produced by `reader`.
+///
+/// The byte string which the pattern should be searched against is read from `reader` in
+/// [`CHUNK_SIZE`] chunks, when required by the iterator.
+///
+/// ## Example Usage
+/// ```rust
+/// use patternscan;
+/// use std::io::Cursor;
+///
+/// let bytes = [0x10, 0x20, 0x30, 0x40];
+/// let reader = Cursor::new(bytes);
+/// let pattern = patternscan::Matches::from_pattern_str(reader, "20 30");
+/// let match_indices: Vec<usize> = pattern.collect().unwrap();
+/// ```
+pub struct Matches<R: Read> {
+    /// Reader from which the byte string to search will be read.
+    pub reader: R,
+    /// Pattern to search for in the byte string.
+    pub pattern: Pattern,
+    // Internal state, would be nice to reduce this somehow
+    bytes_buf: [u8; CHUNK_SIZE],
+    last_bytes_read: usize,
+    position: usize,
+}
+
+impl<R: Read> Matches<R> {
+    /// Create a new instance of [`Matches`] from an instance of [`Pattern`].
+    ///
+    /// `reader` should be some [`Read`] type which will produce a byte string to search. `pattern`
+    /// should be a [`Pattern`] to search for.
+    pub fn from_pattern(mut reader: R, pattern: Pattern) -> Result<Self, Error> {
+        // Perform initial read into the bytes buffer on creation
+        // Might be more idiomatic to only perform a read once we're stepping through the iterator,
+        // I'm not sure, but this ensures that the state of the struct when an instance is created
+        // is reasonable.
+        let mut bytes_buf = [0; CHUNK_SIZE];
+        let bytes_read = reader
+            .read(&mut bytes_buf)
+            .map_err(|e| Error::new(format!("Failed to read from reader: {}", e)))?;
+
+        Ok(Self {
+            reader,
+            pattern,
+            bytes_buf,
+            last_bytes_read: bytes_read,
+            position: 0,
+        })
+    }
+
+    /// Create a new instance of [`Matches`] from a string pattern.
+    pub fn from_pattern_str(reader: R, pattern: &str) -> Result<Self, Error> {
+        let pattern = Pattern::from_str(pattern)?;
+        Self::from_pattern(reader, pattern)
+    }
+}
+
+impl<R: Read> Iterator for Matches<R> {
+    type Item = Result<usize, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let rel_position = self.position % CHUNK_SIZE;
+
+            if rel_position == self.last_bytes_read % CHUNK_SIZE && self.position > 0 {
+                self.last_bytes_read = match self.reader.read(&mut self.bytes_buf) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        return Some(Err(Error::new(format!(
+                            "Failed to read from reader: {}",
+                            e
+                        ))))
+                    }
+                };
+            }
+
+            if self.last_bytes_read == 0 {
+                break;
+            }
+
+            for i in rel_position..self.last_bytes_read {
+                self.position += 1;
+                if pattern_matches(&self.bytes_buf[i..], &self.pattern) {
+                    return Some(Ok(self.position - 1));
+                }
+            }
+        }
+
+        None
     }
 }
 
