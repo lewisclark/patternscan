@@ -302,7 +302,7 @@ mod tests {
             vec![0, 3]
         );
     }
-  
+
     #[test]
     fn scan_rejects_invalid_pattern() {
         let bytes = [0x10, 0x20, 0x30];
@@ -310,8 +310,8 @@ mod tests {
 
         assert!(crate::scan(Cursor::new(bytes), &pattern).is_err());
     }
-  
-      #[test]
+
+    #[test]
     fn scan_first_match_simple_start() {
         let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
         let pattern = "10 20 30";
@@ -321,9 +321,9 @@ mod tests {
                 .unwrap()
                 .unwrap(),
             0
-       );
+        );
     }
-  
+
     #[test]
     fn scan_first_match_simple_middle() {
         let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
