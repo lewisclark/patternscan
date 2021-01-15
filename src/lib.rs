@@ -1,9 +1,53 @@
+//! Searches for a contiguous array of bytes determined by a given pattern. The pattern can include
+//! supported wildcard characters, as seen below.
+//!
+//! ## Wildcards
+//! * `?` match any byte
+//!
+//! ## Example Patterns
+//! * `fe 00 68 98` - matches only `fe 00 68 98`
+//! * `8d 11 ? ? 8f` - could match `8d 11 9e ef 8f` or `8d 11 0 0 8f` for example
+//!
+//! ## Example Usage
+//! The [`scan`] function is used to scan for a pattern within the output of a [`Read`]. Using a
+//! [`Cursor`](std::io::Cursor) to scan within a byte array in memory could look as follows:
+//!
+//! ```rust
+//! use patternscan::scan;
+//! use std::io::Cursor;
+//!
+//! let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
+//! let pattern = "20 30 40";
+//! let locs = scan(Cursor::new(bytes), &pattern).unwrap(); // Will equal vec![1], the index of
+//!                                                         // the pattern
+//! ```
+//!
+//! Any struct implementing [`Read`] can be passed as the reader which should be scanned for
+//! ocurrences of a pattern, so one could scan for a byte sequence within an executable as follows:
+//!
+//! ```ignore
+//! use patternscan::scan;
+//! use std::fs::File;
+//!
+//! let reader = File::open("somebinary.exe").unwrap();
+//! let instruction = "A3 ? ? ? ?";
+//! let locs = scan(reader, &instruction).unwrap();
+//! ```
+//!
+//! For more example uses of this module, see the
+//! [tests](https://github.com/lewisclark/patternscan/blob/master/src/lib.rs#L128)
 use std::fmt::{self, Display};
 use std::io::Read;
 use std::str::FromStr;
 
 const CHUNK_SIZE: usize = 0x800;
 
+/// Scan for any instances of `pattern` in the bytes read by `reader`.
+///
+/// Returns a [`Result`] containing a vector of indices of the start of each match within the
+/// bytes. If no matches are found, this vector will be empty. Returns an [`Error`] if an error was
+/// encountered while scanning, which could occur if the pattern is invalid (i.e: contains
+/// something other than 8-bit hex values and wildcards), or if the reader encounters an error.
 pub fn scan(mut reader: impl Read, pattern: &str) -> Result<Vec<usize>, Error> {
     let pattern = Pattern::from_str(pattern)?;
     let mut matches = Vec::new();
@@ -71,9 +115,10 @@ fn pattern_matches(bytes: &[u8], pattern: &Pattern) -> bool {
     }
 }
 
-// Error
+/// Represents an error which occurred while scanning for a pattern.
 #[derive(Debug)]
 pub struct Error {
+    /// String detailing the error
     e: String,
 }
 
@@ -91,7 +136,6 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-// PatternByte
 #[derive(PartialEq, Eq)]
 enum PatternByte {
     Byte(u8),
@@ -238,6 +282,36 @@ mod tests {
     }
 
     #[test]
+    fn scan_multiple_instances_of_pattern() {
+        let bytes = [0x10, 0x20, 0x30, 0x10, 0x20, 0x30];
+        let pattern = "10 20 30";
+
+        assert_eq!(
+            crate::scan(Cursor::new(bytes), &pattern).unwrap(),
+            vec![0, 3]
+        );
+    }
+
+    #[test]
+    fn scan_multiple_instances_q() {
+        let bytes = [0x10, 0x20, 0x30, 0x10, 0x40, 0x30];
+        let pattern = "10 ? 30";
+
+        assert_eq!(
+            crate::scan(Cursor::new(bytes), &pattern).unwrap(),
+            vec![0, 3]
+        );
+    }
+  
+    #[test]
+    fn scan_rejects_invalid_pattern() {
+        let bytes = [0x10, 0x20, 0x30];
+        let pattern = "10 fff 20";
+
+        assert!(crate::scan(Cursor::new(bytes), &pattern).is_err());
+    }
+  
+      #[test]
     fn scan_first_match_simple_start() {
         let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
         let pattern = "10 20 30";
@@ -247,9 +321,9 @@ mod tests {
                 .unwrap()
                 .unwrap(),
             0
-        );
+       );
     }
-
+  
     #[test]
     fn scan_first_match_simple_middle() {
         let bytes = [0x10, 0x20, 0x30, 0x40, 0x50];
