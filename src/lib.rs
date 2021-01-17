@@ -40,6 +40,11 @@ use std::fmt::{self, Display};
 use std::io::Read;
 use std::str::FromStr;
 
+/// Size of chunks to be read from `reader` when looking for patterns.
+///
+/// In [`Matches`] (which in turn is used in [`scan`] and [`scan_first_match`]), bytes are read
+/// from the provided [`Read`] type into a fixed-size internal buffer. The length of this buffer is
+/// given by `CHUNK_SIZE`.
 pub const CHUNK_SIZE: usize = 0x800;
 
 /// Scan for any instances of `pattern` in the bytes read by `reader`.
@@ -191,18 +196,21 @@ impl PartialEq<[u8]> for Pattern {
 ///
 /// let bytes = [0x10, 0x20, 0x30, 0x40];
 /// let reader = Cursor::new(bytes);
-/// let pattern = patternscan::Matches::from_pattern_str(reader, "20 30");
-/// let match_indices: Vec<usize> = pattern.collect().unwrap();
+/// let pattern = patternscan::Matches::from_pattern_str(reader, "20 30").unwrap();
+/// let match_indices: Result<Vec<usize>, _> = pattern.collect();
+/// let match_indices = match_indices.unwrap();
 /// ```
 pub struct Matches<R: Read> {
     /// Reader from which the byte string to search will be read.
     pub reader: R,
     /// Pattern to search for in the byte string.
     pub pattern: Pattern,
+
     // Internal state, would be nice to reduce this somehow
     bytes_buf: [u8; CHUNK_SIZE],
     last_bytes_read: usize,
-    position: usize,
+    abs_position: usize,
+    rel_position: usize,
 }
 
 impl<R: Read> Matches<R> {
@@ -211,6 +219,15 @@ impl<R: Read> Matches<R> {
     /// `reader` should be some [`Read`] type which will produce a byte string to search. `pattern`
     /// should be a [`Pattern`] to search for.
     pub fn from_pattern(mut reader: R, pattern: Pattern) -> Result<Self, Error> {
+        // Constraint imposed due to the method used to detect matches over chunk boundaries. We
+        // might want to increase the chunk size to account for this?
+        if 2 * pattern.len() > CHUNK_SIZE {
+            return Err(Error::new(format!(
+                "Pattern too long: It can be at most {} bytes",
+                CHUNK_SIZE / 2
+            )));
+        }
+
         // Perform initial read into the bytes buffer on creation
         // Might be more idiomatic to only perform a read once we're stepping through the iterator,
         // I'm not sure, but this ensures that the state of the struct when an instance is created
@@ -225,7 +242,8 @@ impl<R: Read> Matches<R> {
             pattern,
             bytes_buf,
             last_bytes_read: bytes_read,
-            position: 0,
+            abs_position: 0,
+            rel_position: 0,
         })
     }
 
@@ -241,29 +259,42 @@ impl<R: Read> Iterator for Matches<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let rel_position = self.position % CHUNK_SIZE;
+            if self.rel_position == CHUNK_SIZE - self.pattern.len() {
+                // This block is what allows us to detect matches over chunk boundaries.
+                // When we're close enough to a boundary that a pattern match could overrun, we
+                // copy the final bytes in the buffer to the start of the buffer, then read into
+                // the rest of the buffer.
+                let len = self.pattern.len();
 
-            if rel_position == self.last_bytes_read % CHUNK_SIZE && self.position > 0 {
-                self.last_bytes_read = match self.reader.read(&mut self.bytes_buf) {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        return Some(Err(Error::new(format!(
-                            "Failed to read from reader: {}",
-                            e
-                        ))))
-                    }
+                let boundary_bytes = &self.bytes_buf[CHUNK_SIZE - len..].to_owned();
+                self.bytes_buf[..len].copy_from_slice(&boundary_bytes);
+
+                self.last_bytes_read = match self.reader.read(&mut self.bytes_buf[len..]) {
+                    Ok(b) => b,
+                    Err(e) => return Some(Err(Error::new(format!("Failed to read bytes: {}", e)))),
                 };
+
+                self.rel_position = 0;
+            }
+
+            if self.rel_position == self.last_bytes_read + self.pattern.len() {
+                break;
+            }
+
+            for i in self.rel_position..self.last_bytes_read + self.pattern.len() {
+                if i == CHUNK_SIZE - self.pattern.len() {
+                    break;
+                }
+
+                self.abs_position += 1;
+                self.rel_position += 1;
+                if pattern_matches(&self.bytes_buf[i..], &self.pattern) {
+                    return Some(Ok(self.abs_position - 1));
+                }
             }
 
             if self.last_bytes_read == 0 {
                 break;
-            }
-
-            for i in rel_position..self.last_bytes_read {
-                self.position += 1;
-                if pattern_matches(&self.bytes_buf[i..], &self.pattern) {
-                    return Some(Ok(self.position - 1));
-                }
             }
         }
 
