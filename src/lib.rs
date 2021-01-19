@@ -71,8 +71,7 @@ pub fn scan(reader: impl Read, pattern: &str) -> Result<Vec<usize>, Error> {
 /// occur if the pattern is invalid (i.e: contains something other than 8-bit hex values and
 /// wildcards), or if the reader encounters an error.
 pub fn scan_first_match(reader: impl Read, pattern: &str) -> Result<Option<usize>, Error> {
-    let pattern = Pattern::from_str(pattern)?;
-    let mut matches = Matches::from_pattern(reader, pattern)?;
+    let mut matches = Matches::from_pattern_str(reader, pattern)?;
     matches.next().transpose()
 }
 
@@ -235,7 +234,7 @@ impl<R: Read> Matches<R> {
         let mut bytes_buf = [0; CHUNK_SIZE];
         let bytes_read = reader
             .read(&mut bytes_buf)
-            .map_err(|e| Error::new(format!("Failed to read from reader: {}", e)))?;
+            .map_err(|e| Error::new(format!("Failed to read bytes: {}", e)))?;
 
         Ok(Self {
             reader,
@@ -457,5 +456,22 @@ mod tests {
         assert!(crate::scan_first_match(Cursor::new(bytes), &pattern)
             .unwrap()
             .is_some())
+    }
+
+    #[test]
+    fn correct_index_noninitial_chunk() {
+        let mut bytes = vec![0; super::CHUNK_SIZE];
+        bytes.push(0xaa);
+        bytes.push(0xbb);
+        bytes.push(0xcc);
+        bytes.push(0xdd);
+        let pattern = "aa bb cc dd";
+
+        assert_eq!(
+            crate::scan_first_match(Cursor::new(bytes), &pattern)
+                .unwrap()
+                .unwrap(),
+            super::CHUNK_SIZE
+        );
     }
 }
