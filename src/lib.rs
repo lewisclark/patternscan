@@ -40,13 +40,6 @@ use std::fmt::{self, Display};
 use std::io::Read;
 use std::str::FromStr;
 
-/// Size of chunks to be read from `reader` when looking for patterns.
-///
-/// In [`Matches`] (which in turn is used in [`scan`] and [`scan_first_match`]), bytes are read
-/// from the provided [`Read`] type into a fixed-size internal buffer. The length of this buffer is
-/// given by `CHUNK_SIZE`.
-pub const CHUNK_SIZE: usize = 0x800;
-
 /// Scan for any instances of `pattern` in the bytes read by `reader`.
 ///
 /// Returns a [`Result`] containing a vector of indices of the start of each match within the
@@ -55,7 +48,8 @@ pub const CHUNK_SIZE: usize = 0x800;
 /// something other than 8-bit hex values and wildcards), or if the reader encounters an error.
 pub fn scan(reader: impl Read, pattern: &str) -> Result<Vec<usize>, Error> {
     let matches = Matches::from_pattern_str(reader, pattern)?;
-    matches.collect()
+
+    Ok(matches.collect())
 }
 
 /// Scan for the first instance of `pattern` in the bytes read by `reader`.
@@ -72,7 +66,8 @@ pub fn scan(reader: impl Read, pattern: &str) -> Result<Vec<usize>, Error> {
 /// wildcards), or if the reader encounters an error.
 pub fn scan_first_match(reader: impl Read, pattern: &str) -> Result<Option<usize>, Error> {
     let mut matches = Matches::from_pattern_str(reader, pattern)?;
-    matches.next().transpose()
+
+    Ok(matches.next())
 }
 
 /// Determine whether a byte slice matches a pattern.
@@ -185,9 +180,6 @@ impl PartialEq<[u8]> for Pattern {
 /// [`scan_first_match`] functions to locate matches. The values returned by the iterator are
 /// indices of locations of the pattern matches within the byte string produced by `reader`.
 ///
-/// The byte string which the pattern should be searched against is read from `reader` in
-/// [`CHUNK_SIZE`] chunks, when required by the iterator.
-///
 /// ## Example Usage
 /// ```rust
 /// use patternscan;
@@ -196,104 +188,50 @@ impl PartialEq<[u8]> for Pattern {
 /// let bytes = [0x10, 0x20, 0x30, 0x40];
 /// let reader = Cursor::new(bytes);
 /// let pattern = patternscan::Matches::from_pattern_str(reader, "20 30").unwrap();
-/// let match_indices: Result<Vec<usize>, _> = pattern.collect();
-/// let match_indices = match_indices.unwrap();
+/// let match_indices: Vec<usize> = pattern.collect();
 /// ```
-pub struct Matches<R: Read> {
+pub struct Matches {
     /// Reader from which the byte string to search will be read.
-    pub reader: R,
+    pub buf: Vec<u8>,
     /// Pattern to search for in the byte string.
     pub pattern: Pattern,
-
-    // Internal state, would be nice to reduce this somehow
-    bytes_buf: [u8; CHUNK_SIZE],
-    last_bytes_read: usize,
-    abs_position: usize,
-    rel_position: usize,
+    pub pos: usize,
 }
 
-impl<R: Read> Matches<R> {
+impl Matches {
     /// Create a new instance of [`Matches`] from an instance of [`Pattern`].
     ///
     /// `reader` should be some [`Read`] type which will produce a byte string to search. `pattern`
     /// should be a [`Pattern`] to search for.
-    pub fn from_pattern(mut reader: R, pattern: Pattern) -> Result<Self, Error> {
-        // Constraint imposed due to the method used to detect matches over chunk boundaries. We
-        // might want to increase the chunk size to account for this?
-        if 2 * pattern.len() > CHUNK_SIZE {
-            return Err(Error::new(format!(
-                "Pattern too long: It can be at most {} bytes",
-                CHUNK_SIZE / 2
-            )));
-        }
-
-        // Perform initial read into the bytes buffer on creation
-        // Might be more idiomatic to only perform a read once we're stepping through the iterator,
-        // I'm not sure, but this ensures that the state of the struct when an instance is created
-        // is reasonable.
-        let mut bytes_buf = [0; CHUNK_SIZE];
-        let bytes_read = reader
-            .read(&mut bytes_buf)
-            .map_err(|e| Error::new(format!("Failed to read bytes: {}", e)))?;
+    pub fn from_pattern<R: Read>(mut reader: R, pattern: Pattern) -> Result<Self, Error> {
+        let mut buf = Vec::new();
+        reader
+            .read_to_end(&mut buf)
+            .map_err(|e| Error::new(format!("Failed to read from Reader: {}", e)))?;
 
         Ok(Self {
-            reader,
+            buf,
             pattern,
-            bytes_buf,
-            last_bytes_read: bytes_read,
-            abs_position: 0,
-            rel_position: 0,
+            pos: 0,
         })
     }
 
     /// Create a new instance of [`Matches`] from a string pattern.
-    pub fn from_pattern_str(reader: R, pattern: &str) -> Result<Self, Error> {
-        let pattern = Pattern::from_str(pattern)?;
-        Self::from_pattern(reader, pattern)
+    pub fn from_pattern_str<R: Read>(reader: R, pattern: &str) -> Result<Self, Error> {
+        Self::from_pattern(reader, Pattern::from_str(pattern)?)
     }
 }
 
-impl<R: Read> Iterator for Matches<R> {
-    type Item = Result<usize, Error>;
+impl Iterator for Matches {
+    type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.rel_position == CHUNK_SIZE - self.pattern.len() {
-                // This block is what allows us to detect matches over chunk boundaries.
-                // When we're close enough to a boundary that a pattern match could overrun, we
-                // copy the final bytes in the buffer to the start of the buffer, then read into
-                // the rest of the buffer.
-                let len = self.pattern.len();
+        while self.pos < self.buf.len() {
+            let p = self.pos;
+            self.pos += 1;
 
-                let boundary_bytes = &self.bytes_buf[CHUNK_SIZE - len..].to_owned();
-                self.bytes_buf[..len].copy_from_slice(&boundary_bytes);
-
-                self.last_bytes_read = match self.reader.read(&mut self.bytes_buf[len..]) {
-                    Ok(b) => b,
-                    Err(e) => return Some(Err(Error::new(format!("Failed to read bytes: {}", e)))),
-                };
-
-                self.rel_position = 0;
-            }
-
-            if self.rel_position == self.last_bytes_read + self.pattern.len() {
-                break;
-            }
-
-            for i in self.rel_position..self.last_bytes_read + self.pattern.len() {
-                if i == CHUNK_SIZE - self.pattern.len() {
-                    break;
-                }
-
-                self.abs_position += 1;
-                self.rel_position += 1;
-                if pattern_matches(&self.bytes_buf[i..], &self.pattern) {
-                    return Some(Ok(self.abs_position - 1));
-                }
-            }
-
-            if self.last_bytes_read == 0 {
-                break;
+            if pattern_matches(&self.buf[p..], &self.pattern) {
+                return Some(p);
             }
         }
 
@@ -442,36 +380,5 @@ mod tests {
         assert!(crate::scan_first_match(Cursor::new(bytes), &pattern)
             .unwrap()
             .is_none());
-    }
-
-    #[test]
-    fn find_across_chunk_boundary() {
-        let mut bytes = vec![0; super::CHUNK_SIZE - 2];
-        bytes.push(0xaa);
-        bytes.push(0xbb);
-        bytes.push(0xcc);
-        bytes.push(0xdd);
-        let pattern = "aa bb cc dd";
-
-        assert!(crate::scan_first_match(Cursor::new(bytes), &pattern)
-            .unwrap()
-            .is_some())
-    }
-
-    #[test]
-    fn correct_index_noninitial_chunk() {
-        let mut bytes = vec![0; super::CHUNK_SIZE];
-        bytes.push(0xaa);
-        bytes.push(0xbb);
-        bytes.push(0xcc);
-        bytes.push(0xdd);
-        let pattern = "aa bb cc dd";
-
-        assert_eq!(
-            crate::scan_first_match(Cursor::new(bytes), &pattern)
-                .unwrap()
-                .unwrap(),
-            super::CHUNK_SIZE
-        );
     }
 }
